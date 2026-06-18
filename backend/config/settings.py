@@ -47,7 +47,7 @@ INSTALLED_APPS = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "https://email-automation-eight-eta.vercel.app/", # Jab frontend deploy ho tab yeh lagana
+    "https://email-automation-eight-eta.vercel.app", # Jab frontend deploy ho tab yeh lagana
 ]
 SITE_BASE_URL = "https://emailautomation-production-eb9f.up.railway.app/"
 MIDDLEWARE = [
