@@ -81,14 +81,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-CELERY_BROKER_URL = 'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
+CELERY_BROKER_URL = os.environ.get(
+    'CELERY_BROKER_URL', 
+    'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
+)
 
-CELERY_RESULT_BACKEND = 'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
+CELERY_RESULT_BACKEND = os.environ.get(
+    'CELERY_RESULT_BACKEND', 
+    'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
+)
+
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Karachi'
-
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
@@ -96,7 +102,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 
-EMAIL_HOST_USER = 'jaffar62malik@gmail.com'
+EMAIL_HOST_USER = 'Shivamshukla913152@gmail.com'
 EMAIL_HOST_PASSWORD ="fsqokcxdqcmkjgfw"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
