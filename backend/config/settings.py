@@ -91,13 +91,12 @@ CELERY_TIMEZONE = 'Asia/Karachi'
 
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-
 EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-
+EMAIL_PORT = 465                # 587 se badal kar 465 kar diya
+EMAIL_USE_TLS = False           # TLS ko False kar diya
+EMAIL_USE_SSL = True            # SSL ko True kar diya
 EMAIL_HOST_USER = 'Shivamshukla913152@gmail.com'
-EMAIL_HOST_PASSWORD ="wpuetdmhpefdhkxr"
+EMAIL_HOST_PASSWORD = "wpuetdmhpefdhkxr"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # Database
