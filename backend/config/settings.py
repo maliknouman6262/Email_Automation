@@ -10,7 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 from celery.schedules import crontab
-import os
+
 from pathlib import Path
 # import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -81,20 +81,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-CELERY_BROKER_URL = os.environ.get(
-    'CELERY_BROKER_URL', 
-    'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
-)
+CELERY_BROKER_URL = 'redis://default:YJdPsKvmjgBoOCtQWYbxITyuWbkfZnjI@thomas.proxy.rlwy.net:41417'
 
-CELERY_RESULT_BACKEND = os.environ.get(
-    'CELERY_RESULT_BACKEND', 
-    'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
-)
-
+CELERY_RESULT_BACKEND = 'redis://default:YJdPsKvmjgBoOCtQWYbxITyuWbkfZnjI@thomas.proxy.rlwy.net:41417'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Karachi'
+
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
