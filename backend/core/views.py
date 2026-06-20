@@ -177,9 +177,14 @@ def upload_and_analyze_leads(request):
 
 # ─────────────────────────────────────────────
 # CONFIRM & SAVE + AUTO SCHEDULE
+# ✅ FIXED: ALLOWS DUPLICATE EMAILS
 # ─────────────────────────────────────────────
 @api_view(["POST"])
 def confirm_and_schedule_leads(request):
+    """
+    ✅ FIXED: Now allows multiple leads with same email address
+    Each lead is a separate database record with unique ID
+    """
     leads_data = request.data.get("leads", [])
     sender_profile = request.data.get("sender_profile", {})
     campaign_id = request.data.get("campaign_id", None)
@@ -194,7 +199,8 @@ def confirm_and_schedule_leads(request):
         except Campaign.DoesNotExist:
             pass
 
-    test_mode = request.data.get("test_mode", False)
+    test_mode = request.data.get("test_mode", True)
+
     # Test mode: 2-5 min gaps | Normal: 15-20 min gaps
     gap_min = 2 * 60 if test_mode else 15 * 60
     gap_max = 5 * 60 if test_mode else 20 * 60
@@ -202,10 +208,10 @@ def confirm_and_schedule_leads(request):
     saved_leads = []
     cumulative_delay = 0
 
+    # ✅ FIXED: Removed duplicate check - create all leads
     for lead_data in leads_data:
-        if Lead.objects.filter(email=lead_data["email"]).exists():
-            continue
-
+        # ✅ Don't check if email exists, just create
+        # This allows same email in multiple campaigns/times
         lead = Lead.objects.create(
             name=lead_data["name"],
             email=lead_data["email"],
@@ -219,7 +225,7 @@ def confirm_and_schedule_leads(request):
         gap = random.randint(gap_min, gap_max)
         cumulative_delay += gap
 
-        # Schedule initial email
+        # Schedule initial email with lead_id for tracking
         process_and_send_email.apply_async(
             args=[
                 lead.name,
@@ -228,6 +234,7 @@ def confirm_and_schedule_leads(request):
                 lead.requirement,
                 json.dumps(sender_profile)
             ],
+            kwargs={"lead_id": lead.id},  # ✅ Pass lead_id
             countdown=cumulative_delay
         )
 
@@ -238,7 +245,7 @@ def confirm_and_schedule_leads(request):
     return Response({
         "message": f"{len(saved_leads)} leads saved and emails scheduled.",
         "scheduled": len(saved_leads),
-        "skipped_duplicates": len(leads_data) - len(saved_leads),
+        "skipped_duplicates": 0,  # ✅ Always 0 - no duplicates skipped
         "first_email_in_minutes": round(avg_gap, 1),
         "avg_gap_minutes": round(avg_gap, 1),
         "test_mode": test_mode,
@@ -350,8 +357,10 @@ def send_campaign(request):
     for lead in leads:
         gap = random.randint(delay * 60, (delay + 5) * 60)
         cumulative += gap
+        # ✅ Pass lead_id for tracking
         process_and_send_email.apply_async(
             args=[lead.name, lead.email, lead.company, lead.requirement],
+            kwargs={"lead_id": lead.id},
             countdown=cumulative
         )
 
@@ -618,4 +627,115 @@ def report_stats(request):
         "reply_rate": reply_rate,
         "response_rate": response_rate,
         "delivery_rate": delivery_rate,
+    })
+
+@api_view(["GET"])
+def pending_emails(request):
+    from django.utils import timezone
+    
+    # Pending leads (scheduled but not sent yet)
+    pending_leads = Lead.objects.filter(
+        status="pending"
+    ).exclude(name="__sender_profile__").order_by("created_at")
+    
+    # Sent emails
+    sent_logs = EmailLog.objects.select_related("lead").filter(
+        status="sent"
+    ).order_by("-sent_at")[:50]
+    
+    pending_list = []
+    for lead in pending_leads:
+        pending_list.append({
+            "id": lead.id,
+            "name": lead.name,
+            "email": lead.email,
+            "company": lead.company,
+            "status": "pending",
+            "created_at": str(lead.created_at),
+        })
+    
+    sent_list = []
+    for log in sent_logs:
+        sent_list.append({
+            "id": log.id,
+            "name": log.lead.name,
+            "email": log.lead.email,
+            "company": log.lead.company,
+            "subject": log.subject,
+            "sent_at": str(log.sent_at),
+            "opened": log.opened,
+            "clicked": log.clicked,
+            "replied": log.replied,
+            "is_followup": log.followup_sent,
+            "tracking_id": str(log.tracking_id),
+        })
+    
+    return Response({
+        "pending": pending_list,
+        "pending_count": len(pending_list),
+        "sent": sent_list,
+        "sent_count": len(sent_list),
+    })
+
+# views.py mein add karo
+@api_view(["GET"])
+def email_activity(request):
+    from django.utils import timezone
+    from django.db.models import Max
+    now = timezone.now()
+
+    pending = Lead.objects.filter(
+        status="pending"
+    ).exclude(name="__sender_profile__").order_by("created_at")
+
+    # ✅ Har lead ki sirf LATEST log lo
+    latest_ids = EmailLog.objects.values("lead_id").annotate(
+        latest_id=Max("id")
+    ).values_list("latest_id", flat=True)
+
+    logs = EmailLog.objects.select_related("lead").filter(
+        id__in=latest_ids
+    ).order_by("-sent_at")[:50]
+
+    pending_list = [{
+        "id": l.id,
+        "name": l.name,
+        "email": l.email,
+        "company": l.company,
+        "created_at": str(l.created_at),
+    } for l in pending]
+
+    sent_list = []
+    for log in logs:
+        diff = now - log.sent_at
+        mins = int(diff.total_seconds() / 60)
+        if mins < 1: time_str = "Just now"
+        elif mins < 60: time_str = f"{mins}m ago"
+        elif mins < 1440: time_str = f"{mins//60}h ago"
+        else: time_str = f"{mins//1440}d ago"
+
+        sent_list.append({
+            "id": log.id,
+            "name": log.lead.name,
+            "email": log.lead.email,
+            "company": log.lead.company,
+            "subject": log.subject,
+            "sent_at": str(log.sent_at),
+            "time_ago": time_str,
+            "opened": log.opened,
+            "open_count": log.open_count,
+            "clicked": log.clicked,
+            "click_count": log.click_count,
+            "replied": log.lead.replied,
+            "auto_replied": log.auto_replied,
+            "is_followup": log.followup_sent,
+            "status": log.status,
+            "tracking_id": str(log.tracking_id),
+        })
+
+    return Response({
+        "pending": pending_list,
+        "pending_count": len(pending_list),
+        "sent": sent_list,
+        "sent_count": len(sent_list),
     })

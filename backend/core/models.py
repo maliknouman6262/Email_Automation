@@ -91,6 +91,7 @@ class FollowUpSettings(models.Model):
     max_attempts = models.IntegerField(default=2)
     followup_days = models.CharField(max_length=50, default="2,5")
     auto_reply_enabled = models.BooleanField(default=False)
+    test_mode = models.BooleanField(default=False)  # ✅ NEW: 5 min followup for testing
 
     class Meta:
         verbose_name = "Follow-up Settings"

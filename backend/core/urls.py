@@ -23,4 +23,7 @@ urlpatterns = [
 
     path("track/open/<uuid:tracking_id>/", views.track_open),
     path("track/click/<uuid:tracking_id>/", views.track_click),
+    path("dashboard/emails/", views.pending_emails),
+    path("dashboard/emails/", views.email_activity),
+
 ]

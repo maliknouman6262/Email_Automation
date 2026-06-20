@@ -8,18 +8,22 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
-def process_and_send_email(name, email, company, requirement, sender_profile_json="{}"):
+def process_and_send_email(name, email, company, requirement, sender_profile_json="{}", lead_id=None):
     from core.services.email_service import send_ai_email
-    return send_ai_email(
-        name=name, email=email, company=company,
-        requirement=requirement, sender_profile_json=sender_profile_json,
-        is_followup=False
-    )
+    try:
+        result = send_ai_email(
+            name=name, email=email, company=company,
+            requirement=requirement, sender_profile_json=sender_profile_json,
+            is_followup=False, lead_id=lead_id
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Email send failed for {email}: {e}")
+        raise
 
 
 @shared_task
 def send_smart_followup(lead_id, followup_type, sender_profile_json="{}", attempt=1):
-    """Send context-aware followup based on engagement state."""
     from core.models import Lead, EmailLog
     from core.services.email_service import send_ai_email_with_context
 
@@ -28,20 +32,11 @@ def send_smart_followup(lead_id, followup_type, sender_profile_json="{}", attemp
     except Lead.DoesNotExist:
         return
 
-    # Skip if lead already replied
     if lead.replied:
-        logger.info(f"Lead {lead.email} already replied, skipping followup attempt {attempt}")
         return
 
-    # Get last email log
-    last_log = EmailLog.objects.filter(
-        lead=lead, status="sent"
-    ).order_by("-sent_at").first()
-
-    if not last_log:
-        return
-
-    if last_log.replied:
+    last_log = EmailLog.objects.filter(lead=lead, status="sent").order_by("-sent_at").first()
+    if not last_log or last_log.replied:
         return
 
     previous_context = {
@@ -55,21 +50,18 @@ def send_smart_followup(lead_id, followup_type, sender_profile_json="{}", attemp
     }
 
     send_ai_email_with_context(
-        name=lead.name,
-        email=lead.email,
-        company=lead.company,
-        requirement=lead.requirement,
-        sender_profile_json=sender_profile_json,
-        previous_context=previous_context,
-        attempt=attempt,
+        name=lead.name, email=lead.email, company=lead.company,
+        requirement=lead.requirement, sender_profile_json=sender_profile_json,
+        previous_context=previous_context, attempt=attempt,
     )
 
 
 @shared_task
 def check_and_schedule_followups():
     """
-    Runs every 30 min via Celery Beat.
-    Checks FollowUpSettings and schedules smart followups based on engagement.
+    Runs every 5 min via Celery Beat.
+    Test mode: 5 min threshold
+    Production: selected days threshold
     """
     from core.models import EmailLog, Lead, Campaign, FollowUpSettings
 
@@ -79,23 +71,23 @@ def check_and_schedule_followups():
 
     max_attempts = settings_obj.max_attempts
     followup_days = [int(d.strip()) for d in settings_obj.followup_days.split(",") if d.strip()]
+    test_mode = settings_obj.test_mode
 
-    # Load sender profile
     sender_profile = {}
     try:
         camp = Campaign.objects.get(name="__sender_profile__")
         sender_profile = json.loads(camp.status) if camp.status != "draft" else {}
-    except Campaign.DoesNotExist:
+    except Exception:
         pass
     sender_profile_json = json.dumps(sender_profile)
 
     now = timezone.now()
     scheduled = 0
 
-    # Get all sent emails where lead hasn't replied and followup attempts < max
     logs = EmailLog.objects.filter(
         status="sent",
         replied=False,
+        followup_sent=False,
     ).select_related("lead")
 
     for log in logs:
@@ -103,11 +95,8 @@ def check_and_schedule_followups():
         if lead.replied:
             continue
 
-        # Count how many followups already sent
         attempts_sent = EmailLog.objects.filter(
-            lead=lead,
-            followup_sent=True,
-            status="sent"
+            lead=lead, followup_sent=True, status="sent"
         ).count()
 
         if attempts_sent >= max_attempts:
@@ -120,29 +109,42 @@ def check_and_schedule_followups():
         days_threshold = followup_days[next_attempt - 1]
         hours_since = (now - log.sent_at).total_seconds() / 3600
 
-        # Hot followup: opened+clicked → 1-2 hours
-        if log.clicked and not log.followup_sent:
-            if hours_since >= 1:
-                delay = random.randint(0, 30 * 60)
-                send_smart_followup.apply_async(
-                    args=[lead.id, "opened_no_reply", sender_profile_json, next_attempt],
-                    countdown=delay
-                )
-                log.followup_sent = True
-                log.save()
-                scheduled += 1
+        if test_mode:
+            threshold_hours = 5 / 60
+            hot_threshold = 2 / 60
+        else:
+            threshold_hours = days_threshold * 24
+            hot_threshold = 1.0
 
-        # Cold/warm followup based on days threshold
-        elif not log.followup_sent and hours_since >= (days_threshold * 24):
-            ftype = "no_open" if not log.opened else "no_response"
-            delay = random.randint(0, 2 * 3600)  # spread within 2 hrs
+        if log.clicked and hours_since >= hot_threshold:
             send_smart_followup.apply_async(
-                args=[lead.id, ftype, sender_profile_json, next_attempt],
-                countdown=delay
+                args=[lead.id, "opened_clicked", sender_profile_json, next_attempt],
+                countdown=0
             )
             log.followup_sent = True
             log.save()
             scheduled += 1
+            logger.info(f"Hot followup → {lead.email}")
+
+        elif log.opened and not log.clicked and hours_since >= threshold_hours:
+            send_smart_followup.apply_async(
+                args=[lead.id, "no_response", sender_profile_json, next_attempt],
+                countdown=0
+            )
+            log.followup_sent = True
+            log.save()
+            scheduled += 1
+            logger.info(f"Warm followup → {lead.email}")
+
+        elif not log.opened and hours_since >= threshold_hours:
+            send_smart_followup.apply_async(
+                args=[lead.id, "no_open", sender_profile_json, next_attempt],
+                countdown=0
+            )
+            log.followup_sent = True
+            log.save()
+            scheduled += 1
+            logger.info(f"Cold followup → {lead.email}")
 
     logger.info(f"Scheduled {scheduled} followups")
     return {"scheduled": scheduled}
@@ -151,15 +153,14 @@ def check_and_schedule_followups():
 @shared_task
 def check_and_auto_reply():
     """
-    Runs every 15 min via Celery Beat.
-    Reads Gmail inbox via IMAP, detects replies, auto-replies if enabled.
+    Runs every 5 min via Celery Beat.
+    FIXED: Reply always marked regardless of auto_reply_enabled setting
     """
     from core.models import FollowUpSettings, EmailLog, Lead, Campaign
     from core.services.gmail_reader import fetch_replies_imap
     from core.services.email_service import send_auto_reply
 
     settings_obj, _ = FollowUpSettings.objects.get_or_create(pk=1)
-
     replies = fetch_replies_imap()
     processed = 0
 
@@ -168,57 +169,55 @@ def check_and_auto_reply():
         reply_body = reply["body"]
         subject = reply["subject"]
 
-        # Find lead by email
-        lead = Lead.objects.filter(email__iexact=sender_email).first()
-        if not lead:
+        leads = Lead.objects.filter(email__iexact=sender_email, replied=False)
+        if not leads.exists():
             continue
 
-        # Check if it's a real business reply (not spam/ad/notification)
         if not is_business_reply(reply_body, subject):
             logger.info(f"Ignored non-business email from {sender_email}")
             continue
 
-        # Mark as replied
-        lead.replied = True
-        lead.replied_at = timezone.now()
-        lead.save()
+        for lead in leads:
+            # ✅ ALWAYS mark replied — independent of auto_reply_enabled
+            lead.replied = True
+            lead.replied_at = timezone.now()
+            lead.save()
+            EmailLog.objects.filter(lead=lead).update(replied=True)
+            logger.info(f"Marked replied: {lead.email}")
 
-        # Mark EmailLog as replied
-        EmailLog.objects.filter(lead=lead).update(replied=True)
+            # ✅ Send auto-reply ONLY if enabled
+            if settings_obj.auto_reply_enabled:
+                try:
+                    camp = Campaign.objects.get(name="__sender_profile__")
+                    sender_profile = json.loads(camp.status) if camp.status != "draft" else {}
+                except Campaign.DoesNotExist:
+                    sender_profile = {}
 
-        # Auto-reply if enabled
-        if settings_obj.auto_reply_enabled:
-            # Load sender profile
-            try:
-                camp = Campaign.objects.get(name="__sender_profile__")
-                sender_profile = json.loads(camp.status) if camp.status != "draft" else {}
-            except Campaign.DoesNotExist:
-                sender_profile = {}
+                original_log = EmailLog.objects.filter(
+                    lead=lead, followup_sent=False, status="sent"
+                ).order_by("-sent_at").first()
+                original_email = original_log.message if original_log else ""
 
-            # Get original email context
-            original_log = EmailLog.objects.filter(lead=lead, followup_sent=False).order_by("-sent_at").first()
-            original_email = original_log.message if original_log else ""
+                try:
+                    send_auto_reply(
+                        lead=lead, reply_text=reply_body,
+                        original_email=original_email,
+                        sender_profile_json=json.dumps(sender_profile),
+                    )
+                    EmailLog.objects.filter(lead=lead, replied=True).update(auto_replied=True)
+                    logger.info(f"Auto-reply sent to {lead.email}")
+                except Exception as e:
+                    logger.error(f"Auto-reply failed for {lead.email}: {e}")
 
-            send_auto_reply(
-                lead=lead,
-                reply_text=reply_body,
-                original_email=original_email,
-                sender_profile_json=json.dumps(sender_profile),
-            )
-
-            EmailLog.objects.filter(lead=lead, replied=True).update(auto_replied=True)
-
-        processed += 1
+            processed += 1
 
     return {"processed": processed}
 
 
 def is_business_reply(body: str, subject: str) -> bool:
-    """Determine if email is a genuine business reply vs spam/ad/notification."""
     body_lower = (body or "").lower()
     subject_lower = (subject or "").lower()
 
-    # Ignore patterns
     ignore_patterns = [
         "unsubscribe", "no-reply", "noreply", "notification", "donotreply",
         "do not reply", "auto-generated", "automatic reply", "out of office",
@@ -233,8 +232,15 @@ def is_business_reply(body: str, subject: str) -> bool:
         if pattern in body_lower or pattern in subject_lower:
             return False
 
-    # Must have some meaningful content
-    if len(body.strip()) < 20:
+    # ✅ Strip quoted text — only check actual reply
+    actual_reply = body
+    for separator in ["\r\nOn ", "\nOn ", "On "]:
+        if separator in body:
+            actual_reply = body.split(separator)[0].strip()
+            break
+
+    # ✅ Accept if 2+ chars
+    if len(actual_reply.strip()) < 2:
         return False
 
     return True

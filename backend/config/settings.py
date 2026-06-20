@@ -49,7 +49,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://email-automation-eight-eta.vercel.app", # Jab frontend deploy ho tab yeh lagana
 ]
-SITE_BASE_URL = "https://emailautomation-production-eb9f.up.railway.app/"
+SITE_BASE_URL = "https://clora-perforated-jeanetta.ngrok-free.dev"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
@@ -81,9 +81,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-CELERY_BROKER_URL = 'redis://default:YJdPsKvmjgBoOCtQWYbxITyuWbkfZnjI@thomas.proxy.rlwy.net:41417'
+CELERY_BROKER_URL = 'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
 
-CELERY_RESULT_BACKEND = 'redis://default:YJdPsKvmjgBoOCtQWYbxITyuWbkfZnjI@thomas.proxy.rlwy.net:41417'
+CELERY_RESULT_BACKEND = 'rediss://default:gQAAAAAAAkqOAAIgcDE2ZmFmYzdhNjlmM2U0Y2ZiODRhYThiMmM1ZDQzYzU5NQ@quick-jackass-150158.upstash.io:6379?ssl_cert_reqs=CERT_NONE'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -91,12 +91,13 @@ CELERY_TIMEZONE = 'Asia/Karachi'
 
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
 EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 465                # 587 se badal kar 465 kar diya
-EMAIL_USE_TLS = False           # TLS ko False kar diya
-EMAIL_USE_SSL = True            # SSL ko True kar diya
-EMAIL_HOST_USER = 'Shivamshukla913152@gmail.com'
-EMAIL_HOST_PASSWORD = "wpuetdmhpefdhkxr"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+EMAIL_HOST_USER = 'jaffar62malik@gmail.com'
+EMAIL_HOST_PASSWORD ="fsqokcxdqcmkjgfw"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # Database
@@ -143,15 +144,13 @@ USE_TZ = True
 
 
 CELERY_BEAT_SCHEDULE = {
-    # Smart followup check — every 30 minutes
     "check-smart-followups": {
         "task": "core.tasks.check_and_schedule_followups",
-        "schedule": crontab(minute="*/30"),
+        "schedule": crontab(minute="*/5"),  # ✅ 30 min se 5 min kar do
     },
-    # Auto-reply check — every 15 minutes
     "check-auto-replies": {
         "task": "core.tasks.check_and_auto_reply",
-        "schedule": crontab(minute="*/15"),
+        "schedule": crontab(minute="*/5"),  # ✅ 15 min se 5 min kar do
     },
 }
 

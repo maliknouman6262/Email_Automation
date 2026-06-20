@@ -16,6 +16,7 @@ export default function FollowUpPanel() {
     max_attempts: 2,
     followup_days: "2,5",
     auto_reply_enabled: false,
+    test_mode: false,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -24,15 +25,13 @@ export default function FollowUpPanel() {
     api.get("followup-settings/").then((r) => setSettings(r.data)).catch(() => {});
   }, []);
 
-  // Parse days into array
   const daysArray = settings.followup_days
     ? settings.followup_days.split(",").map((d) => parseInt(d.trim())).filter(Boolean)
     : [];
 
   function setAttempts(n) {
     const currentDays = [...daysArray];
-    // Adjust days array to match new attempt count
-    while (currentDays.length < n) currentDays.push(currentDays[currentDays.length - 1] + 3 || 3);
+    while (currentDays.length < n) currentDays.push((currentDays[currentDays.length - 1] || 0) + 3);
     const trimmed = currentDays.slice(0, n);
     setSettings({ ...settings, max_attempts: n, followup_days: trimmed.join(",") });
   }
@@ -54,8 +53,32 @@ export default function FollowUpPanel() {
 
   return (
     <div className="followup-panel">
-      {/* Enable toggle */}
-      <div className="fp-row">
+
+      {/* ── Test Mode Toggle ── */}
+      <div className="fp-row" style={{
+        background: settings.test_mode ? "#f59e0b11" : "transparent",
+        border: settings.test_mode ? "1px solid #f59e0b44" : "1px solid transparent",
+        borderRadius: 10, padding: "12px 16px", marginBottom: 4,
+      }}>
+        <div>
+          <div className="fp-title" style={{ color: settings.test_mode ? "#f59e0b" : undefined }}>
+            🧪 Test Mode
+          </div>
+          <div className="fp-sub">
+            {settings.test_mode
+              ? "Follow-ups send in 5 min · Auto-reply checks every 5 min"
+              : "Follow-ups send after selected days · Normal production timing"}
+          </div>
+        </div>
+        <label className="toggle-switch">
+          <input type="checkbox" checked={settings.test_mode}
+            onChange={(e) => setSettings({ ...settings, test_mode: e.target.checked })} />
+          <span className="toggle-track"><span className="toggle-thumb" /></span>
+        </label>
+      </div>
+
+      {/* ── Auto Follow-ups Toggle ── */}
+      <div className="fp-row" style={{ marginTop: 12 }}>
         <div>
           <div className="fp-title">🔄 Auto Follow-ups</div>
           <div className="fp-sub">Send follow-up emails to leads who don't respond</div>
@@ -87,7 +110,17 @@ export default function FollowUpPanel() {
 
           {/* Day selectors */}
           <div className="fp-section">
-            <div className="fp-label">Send Each Follow-up After</div>
+            <div className="fp-label">
+              Send Each Follow-up After
+              {settings.test_mode && (
+                <span style={{
+                  marginLeft: 8, fontSize: 11, color: "#f59e0b",
+                  background: "#f59e0b22", padding: "2px 8px", borderRadius: 4
+                }}>
+                  🧪 Test: 5 min each
+                </span>
+              )}
+            </div>
             <div className="day-selectors">
               {Array.from({ length: settings.max_attempts }).map((_, i) => (
                 <div key={i} className="day-selector-row">
@@ -98,6 +131,7 @@ export default function FollowUpPanel() {
                         key={opt.value}
                         className={`day-chip ${daysArray[i] === opt.value ? "active" : ""}`}
                         onClick={() => setDay(i, opt.value)}
+                        style={{ opacity: settings.test_mode ? 0.5 : 1 }}
                       >
                         {opt.label}
                       </button>
@@ -119,12 +153,9 @@ export default function FollowUpPanel() {
               {daysArray.slice(0, settings.max_attempts).map((day, i) => (
                 <div key={i} className="fps-item">
                   <span className="fps-dot followup" />
-                  <span>Day {day} — Follow-up {i + 1}
-                    <span className="fps-note">
-                      {i === 0 && !daysArray[i - 1]
-                        ? " (if no reply)"
-                        : " (if still no reply)"}
-                    </span>
+                  <span>
+                    {settings.test_mode ? `5 min` : `Day ${day}`} — Follow-up {i + 1}
+                    <span className="fps-note"> (if no reply)</span>
                   </span>
                 </div>
               ))}
@@ -158,7 +189,7 @@ export default function FollowUpPanel() {
           <div className="ari-row"><span>✅</span> Genuine business replies → AI responds</div>
           <div className="ari-row"><span>🚫</span> Ads, newsletters, notifications → ignored</div>
           <div className="ari-row"><span>🚫</span> Out-of-office, no-reply → ignored</div>
-          <div className="ari-row"><span>⏱</span> Checks inbox every 15 minutes</div>
+          <div className="ari-row"><span>⏱</span> Checks inbox every {settings.test_mode ? "5 minutes" : "15 minutes"}</div>
         </div>
       )}
 

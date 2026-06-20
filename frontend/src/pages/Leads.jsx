@@ -180,7 +180,9 @@ function getFileIcon(name) {
 // ── Preview Table ────────────────────────────────────────────
 function LeadsPreview({ leads, testMode, onConfirm, onReset, confirming }) {
   const [selected, setSelected] = useState(leads.map((_, i) => i));
-  const avgGap = 17.5; // 15-20 min average
+  
+  // ✅ FIXED: Change avgGap based on testMode
+  const avgGap = testMode ? 3.5 : 17.5; // Test: 2-5 min avg 3.5 | Prod: 15-20 min avg 17.5
 
   function toggle(i) {
     setSelected((prev) => prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]);
@@ -199,6 +201,10 @@ function LeadsPreview({ leads, testMode, onConfirm, onReset, confirming }) {
     return m > 0 ? `~${h}h ${m}m` : `~${h}h`;
   }
 
+  // ✅ FIXED: Dynamic text based on testMode
+  const delayText = testMode ? "2–5 min" : "15–20 min";
+  const followupText = testMode ? "5 min" : "24 hrs";
+
   return (
     <div>
       <div className="preview-header">
@@ -207,7 +213,7 @@ function LeadsPreview({ leads, testMode, onConfirm, onReset, confirming }) {
             <span className="ai-label">AI Extracted</span>
             {leads.length} leads found
           </h3>
-          <p className="preview-sub">Emails send with 15–20 min random gaps · Follow-up auto-scheduled after 24 hrs</p>
+          <p className="preview-sub">Emails send with {delayText} random gaps · Follow-up auto-scheduled after {followupText}</p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-ghost" onClick={onReset}>↩ Start Over</button>
@@ -271,9 +277,14 @@ function LeadsPreview({ leads, testMode, onConfirm, onReset, confirming }) {
 
 // ── Success + Live Timeline ──────────────────────────────────
 function ScheduledSuccess({ result, leads, testMode, onReset, onTestFollowup }) {
-  const avgGap = result.avg_gap_minutes || 17.5;
+  // ✅ FIXED: Dynamic avgGap based on testMode
+  const avgGap = testMode ? 3.5 : (result.avg_gap_minutes || 17.5);
   const [followupSent, setFollowupSent] = useState(false);
   const [sendingFollowup, setSendingFollowup] = useState(false);
+
+  // ✅ FIXED: Dynamic text
+  const delayText = testMode ? "2–5 min" : "15–20 min";
+  const followupText = testMode ? "5 min" : "24 hrs";
 
   async function handleFollowup() {
     setSendingFollowup(true);
@@ -291,10 +302,10 @@ function ScheduledSuccess({ result, leads, testMode, onReset, onTestFollowup }) 
         <div className="success-icon">🚀</div>
         <h3 className="success-title">Emails Scheduled!</h3>
         <p className="success-sub">
-          <strong>{result.scheduled}</strong> emails queued with 15–20 min gaps
+          <strong>{result.scheduled}</strong> emails queued with {delayText} gaps
         </p>
         <p className="success-sub" style={{ color: "var(--muted)" }}>
-          Follow-up auto-scheduled 24 hrs after each email
+          Follow-up auto-scheduled {followupText} after each email
         </p>
         {result.skipped_duplicates > 0 && (
           <p className="success-sub" style={{ color: "var(--warn)" }}>
@@ -307,7 +318,6 @@ function ScheduledSuccess({ result, leads, testMode, onReset, onTestFollowup }) 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="section-header">
           <span className="section-title">📅 Live Send Schedule</span>
-
         </div>
         <div className="timeline">
           {leads.slice(0, result.scheduled).map((lead, i) => {
@@ -333,10 +343,10 @@ function ScheduledSuccess({ result, leads, testMode, onReset, onTestFollowup }) 
           <div>
             <div className="section-title">🔄 Follow-up Test</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-              Follow-up auto-scheduled 24 hours after each initial email
+              Follow-up auto-scheduled {followupText} after each initial email
             </div>
           </div>
-            <span className="badge badge-sent">✅ Auto-scheduled for 24 hrs later</span>
+          <span className="badge badge-sent">✅ Auto-scheduled for {followupText} later</span>
         </div>
       </div>
 
@@ -350,7 +360,7 @@ function ScheduledSuccess({ result, leads, testMode, onReset, onTestFollowup }) 
 // ── Main ─────────────────────────────────────────────────────
 export default function Leads() {
   const [step, setStep] = useState("upload");
-  const testMode = false; // Production mode
+  const [testMode, setTestMode] = useState(false); // ✅ CHANGED: Now toggleable!
   const [analyzing, setAnalyzing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [extractedLeads, setExtractedLeads] = useState([]);
@@ -380,8 +390,8 @@ export default function Leads() {
           const r = await api.post("leads/upload/", fd, { headers: { "Content-Type": "multipart/form-data" } });
           if (r.data.leads) allLeads = [...allLeads, ...r.data.leads];
         }
-        const seen = new Set();
-        allLeads = allLeads.filter((l) => { if (seen.has(l.email)) return false; seen.add(l.email); return true; });
+        // ✅ REMOVED: Duplicate email filtering
+        // Users can send to same email multiple times (testing)
       }
 
       if (!allLeads.length) { showAlert("error", "AI could not find valid leads."); return; }
@@ -400,9 +410,9 @@ export default function Leads() {
     try { const pr = await api.get("profile/"); senderProfile = pr.data.profile || {}; } catch {}
     try {
       const r = await api.post("leads/confirm/", {
-        leads: chosenLeads,
+        leads: chosenLeads,        // ← Yahan chosenLeads empty toh nahi?
         sender_profile: senderProfile,
-
+        test_mode: testMode,
       });
       setConfirmedLeads(chosenLeads);
       setScheduleResult(r.data);
@@ -415,15 +425,13 @@ export default function Leads() {
   }
 
   async function handleTestFollowup() {
-    // Schedule followup for first confirmed lead
     if (!confirmedLeads.length) return;
-    // We need a lead ID — fetch leads to get the DB id
     try {
       const r = await api.get("leads/");
       const firstMatch = r.data.find((l) => l.email === confirmedLeads[0].email);
       if (firstMatch) {
-        await api.post("followups/run/", { lead_id: firstMatch.id, test_mode: true });
-        showAlert("success", "Follow-up scheduled in 5 minutes!");
+        await api.post("followups/run/", { lead_id: firstMatch.id, test_mode: testMode });
+        showAlert("success", `Follow-up scheduled in ${testMode ? "5 minutes" : "24 hours"}!`);
       }
     } catch {
       showAlert("error", "Could not schedule follow-up.");
@@ -436,7 +444,8 @@ export default function Leads() {
     <div>
       {alert && <div className={`alert alert-${alert.type}`}>{alert.msg}</div>}
 
-
+      {/* ✅ ADDED: Test Mode Toggle at top */}
+      <TestModeToggle testMode={testMode} onChange={setTestMode} />
 
       {step === "upload" && (
         <>
