@@ -59,7 +59,6 @@ def _send_html_email(to_email, subject, plain_text, tracking_id):
     brevo_api_key = getattr(settings, "BREVO_API_KEY", None)
 
     if brevo_api_key:
-        # ✅ Brevo HTTP API — Railway pe kaam karta hai (SMTP blocked nahi)
         response = req.post(
             "https://api.brevo.com/v3/smtp/email",
             headers={
@@ -67,10 +66,7 @@ def _send_html_email(to_email, subject, plain_text, tracking_id):
                 "Content-Type": "application/json",
             },
             json={
-                "sender": {
-                    "name": getattr(settings, "DEFAULT_FROM_NAME", "MailFlow"),
-                    "email": settings.DEFAULT_FROM_EMAIL,
-                },
+                "sender": {"email": settings.DEFAULT_FROM_EMAIL},
                 "to": [{"email": to_email}],
                 "subject": subject,
                 "htmlContent": html_body,
@@ -80,20 +76,14 @@ def _send_html_email(to_email, subject, plain_text, tracking_id):
         if response.status_code not in (200, 201):
             raise Exception(f"Brevo API error: {response.status_code} — {response.text}")
         logger.info(f"Email sent via Brevo API to {to_email}")
-
     else:
-        # ✅ Fallback: Gmail SMTP (local testing)
         msg = EmailMessage(
-            subject=subject,
-            body=html_body,
+            subject=subject, body=html_body,
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[to_email],
         )
         msg.content_subtype = "html"
-        msg.extra_headers = {
-            "X-Mailer": "MailFlow/1.0",
-            "X-Priority": "3",
-        }
+        msg.extra_headers = {"X-Mailer": "MailFlow/1.0", "X-Priority": "3"}
         msg.send(fail_silently=False)
         logger.info(f"Email sent via Gmail SMTP to {to_email}")
 
