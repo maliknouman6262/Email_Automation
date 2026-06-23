@@ -86,6 +86,7 @@ IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 IMAP_USER = os.getenv("IMAP_USER", "jaffar62malik@gmail.com")
 IMAP_PASSWORD = os.getenv("IMAP_PASSWORD", "fsqokcxdqcmkjgfw")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", None)
 
 # ─── Celery ──────────────────────────────────────────────────
 # Local: Upstash Redis
