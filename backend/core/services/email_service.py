@@ -20,7 +20,6 @@ def text_to_html(text: str) -> str:
 
 
 def inject_tracking(html_body: str, tracking_id: str, base_url: str) -> str:
-    # ✅ FIXED: ngrok bypass header added to pixel and links
     pixel = f'<img src="{base_url}/api/track/open/{tracking_id}/?ngrok-skip-browser-warning=true" width="1" height="1" style="display:none;width:1px;height:1px" alt="" />'
 
     def wrap_link(match):
@@ -57,18 +56,46 @@ def _send_html_email(to_email, subject, plain_text, tracking_id):
     html_body = text_to_html(plain_text)
     html_body = inject_tracking(html_body, tracking_id, base_url)
 
-    msg = EmailMessage(
-        subject=subject,
-        body=html_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[to_email],
-    )
-    msg.content_subtype = "html"
-    msg.extra_headers = {
-        "X-Mailer": "MailFlow/1.0",
-        "X-Priority": "3",
-    }
-    msg.send(fail_silently=False)
+    brevo_api_key = getattr(settings, "BREVO_API_KEY", None)
+
+    if brevo_api_key:
+        # ✅ Brevo HTTP API — Railway pe kaam karta hai (SMTP blocked nahi)
+        response = req.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": brevo_api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "sender": {
+                    "name": getattr(settings, "DEFAULT_FROM_NAME", "MailFlow"),
+                    "email": settings.DEFAULT_FROM_EMAIL,
+                },
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_body,
+            },
+            timeout=30,
+        )
+        if response.status_code not in (200, 201):
+            raise Exception(f"Brevo API error: {response.status_code} — {response.text}")
+        logger.info(f"Email sent via Brevo API to {to_email}")
+
+    else:
+        # ✅ Fallback: Gmail SMTP (local testing)
+        msg = EmailMessage(
+            subject=subject,
+            body=html_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[to_email],
+        )
+        msg.content_subtype = "html"
+        msg.extra_headers = {
+            "X-Mailer": "MailFlow/1.0",
+            "X-Priority": "3",
+        }
+        msg.send(fail_silently=False)
+        logger.info(f"Email sent via Gmail SMTP to {to_email}")
 
 
 def send_ai_email(name, email, company, requirement, sender_profile_json="{}", is_followup=False, lead_id=None):
@@ -250,17 +277,7 @@ INSTRUCTIONS:
     subject = f"Re: Proposal for {lead.company}"
     tracking_id = str(uuid.uuid4())
 
-    base_url = getattr(settings, "SITE_BASE_URL", "http://127.0.0.1:8000")
-    html_body = text_to_html(reply_body)
-    html_body = inject_tracking(html_body, tracking_id, base_url)
-
-    msg = EmailMessage(
-        subject=subject, body=html_body,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        to=[lead.email],
-    )
-    msg.content_subtype = "html"
-    msg.send(fail_silently=False)
+    _send_html_email(lead.email, subject, reply_body, tracking_id)
 
     EmailLog.objects.create(
         lead=lead, subject=subject, message=reply_body,
